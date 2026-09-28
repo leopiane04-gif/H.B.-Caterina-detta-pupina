@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Pupy's Adventure</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #111;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      max-width: 450px; /* Rapporto ottimale per schermo verticale mobile */
+      max-height: 900px;
+      background: linear-gradient(180deg, #1e90ff 0%, #00008b 100%);
+      overflow: hidden;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    /* Schermata di vittoria */
+    #win-screen {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 182, 193, 0.95);
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 20px;
+      z-index: 10;
+      animation: fadeIn 0.8s ease-in-out;
+    }
+    .heart {
+      position: absolute;
+      color: #ff4d6d;
+      font-size: 24px;
+      animation: floatUp 3s infinite linear;
+      z-index: 11;
+    }
+    h1 {
+      font-size: 3rem;
+      color: #d63384;
+      margin-bottom: 20px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+    .message-box {
+      background: white;
+      padding: 25px;
+      border-radius: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      border: 3px solid #ff85a1;
+      max-width: 90%;
+      z-index: 12;
+    }
+    p.message {
+      font-size: 1.25rem;
+      color: #4a4a4a;
+      line-height: 1.5;
+      font-weight: 600;
+    }
+    /* Pulsante di riavvio in caso di Game Over */
+    #restart-btn {
+      display: none;
+      position: absolute;
+      top: 60%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 15px 30px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: white;
+      background-color: #ff4757;
+      border: none;
+      border-radius: 50px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      cursor: pointer;
+      z-index: 5;
+    }
+    @keyframes floatUp {
+      0% { transform: translateY(100vh) scale(0.8); opacity: 1; }
+      100% { transform: translateY(-10vh) scale(1.2); opacity: 0; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <button id="restart-btn" onclick="resetGame()">Riprova</button>
+
+    <div id="win-screen">
+      <h1>hai vinto!!</h1>
+      <div class="message-box">
+        <p class="message">
+          brava Pupy! hai vinto una giornata a Verona insieme, tieniti pronta per dei momenti spettacolari insieme...TANTI AUGURII &lt;3
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const winScreen = document.getElementById('win-screen');
+    const restartBtn = document.getElementById('restart-btn');
+
+    // Impostazioni Canvas per Responsive Verticale
+    function resizeCanvas() {
+      const container = document.getElementById('game-container');
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // Lista dei 10 oggetti da mangiare
+    const targetItems = [
+      { name: 'gelato', emoji: '🍦' },
+      { name: 'sushi', emoji: '🍣' },
+      { name: 'statua', emoji: '🗿' },
+      { name: 'fiori', emoji: '💐' },
+      { name: 'scarpe', emoji: '👠' },
+      { name: 'alberi', emoji: '🌳' },
+      { name: 'lago', emoji: '🏞️' },
+      { name: 'edificio', emoji: '🏰' },
+      { name: 'buste della spesa', emoji: '🛍️' },
+      { name: 'sole', emoji: '☀️' }
+    ];
+
+    let gameState = 'PLAYING'; // PLAYING, GAMEOVER, WIN
+    let score = 0;
+    let currentItemIndex = 0;
+
+    // Pesciolina (Giocatore)
+    const player = {
+      x: 100,
+      y: 300,
+      radius: 18,
+      speed: 5,
+      emoji: '🐠',
+      targetX: 100,
+      targetY: 300
+    };
+
+    // Array degli elementi di gioco
+    let enemies = [];
+    let activeItem = null;
+
+    // Gestione Input Touch e Mouse per schermi verticali
+    function handleMove(e) {
+      if (gameState !== 'PLAYING') return;
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      
+      player.targetX = clientX - rect.left;
+      player.targetY = clientY - rect.top;
+    }
+
+    canvas.addEventListener('mousemove', handleMove);
+    canvas.addEventListener('touchmove', (e) => {
+      handleMove(e);
+      e.preventDefault();
+    }, { passive: false });
+    canvas.addEventListener('touchstart', (e) => {
+      handleMove(e);
+      e.preventDefault();
+    }, { passive: false });
+
+    // Spawn dell'oggetto corrente
+    function spawnNextItem() {
+      if (currentItemIndex >= targetItems.length) return;
+      activeItem = {
+        x: Math.random() * (canvas.width - 60) + 30,
+        y: Math.random() * (canvas.height - 120) + 60,
+        radius: 20,
+        data: targetItems[currentItemIndex]
+      };
+    }
+
+    // Spawn di nemici (Pesci grandi e Squali)
+    function spawnEnemy() {
+      if (gameState !== 'PLAYING') return;
+
+      const isShark = Math.random() > 0.6;
+      const enemy = {
+        x: canvas.width + 50,
+        y: Math.random() * (canvas.height - 100) + 50,
+        radius: isShark ? 30 : 22,
+        speed: Math.random() * 2 + (isShark ? 3 : 2),
+        emoji: isShark ? '🦈' : '🐟',
+        type: isShark ? 'squalo' : 'pesce grande'
+      };
+      enemies.push(enemy);
+
+      // Frequenza di spawn nemici
+      setTimeout(spawnEnemy, Math.random() * 1500 + 1000);
+    }
+
+    function init() {
+      score = 0;
+      currentItemIndex = 0;
+      enemies = [];
+      player.x = canvas.width / 2;
+      player.y = canvas.height / 2;
+      player.targetX = player.x;
+      player.targetY = player.y;
+      gameState = 'PLAYING';
+      winScreen.style.display = 'none';
+      restartBtn.style.display = 'none';
+      spawnNextItem();
+      spawnEnemy();
+    }
+
+    function resetGame() {
+      init();
+    }
+
+    // Controllo collisione sferica semplice
+    function checkCollision(circle1, circle2) {
+      const dx = circle1.x - circle2.x;
+      const dy = circle1.y - circle2.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance < circle1.radius + circle2.radius;
+    }
+
+    // Creazione cuoricini per lo schermo finale
+    function createHearts() {
+      for (let i = 0; i < 25; i++) {
+        const heart = document.createElement('div');
+        heart.classList.add('heart');
+        heart.innerHTML = '❤️';
+        heart.style.left = Math.random() * 100 + 'vw';
+        heart.style.animationDelay = Math.random() * 2 + 's';
+        heart.style.fontSize = (Math.random() * 20 + 20) + 'px';
+        document.getElementById('game-container').appendChild(heart);
+      }
+    }
+
+    function triggerWin() {
+      gameState = 'WIN';
+      winScreen.style.display = 'flex';
+      createHearts();
+    }
+
+    // Loop Principale
+    function update() {
+      if (gameState === 'PLAYING') {
+        // Movimento fluido verso il tocco/cursore
+        player.x += (player.targetX - player.x) * 0.1;
+        player.y += (player.targetY - player.y) * 0.1;
+
+        // Limiti dello schermo per la pesciolina
+        player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+        player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+        // Aggiorna Nemici
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          enemies[i].x -= enemies[i].speed;
+
+          // Rimozione nemici fuori dallo schermo
+          if (enemies[i].x < -50) {
+            enemies.splice(i, 1);
+            continue;
+          }
+
+          // Collisione Pesciolina - Nemico
+          if (checkCollision(player, enemies[i])) {
+            gameState = 'GAMEOVER';
+            restartBtn.style.display = 'block';
+          }
+        }
+
+        // Collisione Pesciolina - Oggetto
+        if (activeItem && checkCollision(player, activeItem)) {
+          score++;
+          currentItemIndex++;
+          if (currentItemIndex >= targetItems.length) {
+            triggerWin();
+          } else {
+            spawnNextItem();
+          }
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Disegna Pesciolina
+      ctx.font = `${player.radius * 2}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(player.emoji, player.x, player.y);
+
+      // Disegna Nemici
+      enemies.forEach(enemy => {
+        ctx.font = `${enemy.radius * 2}px serif`;
+        ctx.fillText(enemy.emoji, enemy.x, enemy.y);
+      });
+
+      // Disegna Oggetto da mangiare
+      if (activeItem && gameState === 'PLAYING') {
+        ctx.font = `${activeItem.radius * 2}px serif`;
+        ctx.fillText(activeItem.data.emoji, activeItem.x, activeItem.y);
+        
+        // Etichetta testo sotto l'oggetto
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#fff';
+        ctx.fillText(activeItem.data.name, activeItem.x, activeItem.y + 25);
+      }
+
+      // Disegna Interfaccia Utente (Score & Progresso)
+      if (gameState === 'PLAYING') {
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Cibo raccolto: ${score} / 10`, 15, 30);
+
+        if (activeItem) {
+          ctx.font = '14px sans-serif';
+          ctx.fillText(`Cerca: ${activeItem.data.name}`, 15, 50);
+        }
+      }
+
+      // Disegna Schermata Game Over
+      if (gameState === 'GAMEOVER') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.font = 'bold 28px sans-serif';
+        ctx.fillStyle = '#ff4757';
+        ctx.textAlign = 'center';
+        ctx.fillText('Attenta ai pesci!', canvas.width / 2, canvas.height / 2 - 20);
+      }
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Avvio del gioco
+    init();
+    gameLoop();
+  </script>
+</body>
+</html>
